@@ -1,0 +1,31 @@
+# claude-home-server — Permissions Overrides
+# ===========================================
+# This file is owned by root:mcp-server with mode 640.
+# The MCP process can read it but cannot modify it, ensuring the server
+# cannot escalate its own privileges at runtime.
+#
+# Use overrides to tighten or loosen the default risk level assigned to
+# individual tools.  Valid levels (from lowest to highest risk):
+#
+#   read       — auto-approved, no side effects
+#   moderate   — auto-approved, reversible side effects
+#   elevated   — requires user confirmation before execution
+#   critical   — requires user confirmation AND creates an automatic backup
+#
+# Any tool not listed here uses the default level from src/permissions.py.
+#
+# Examples:
+#
+# overrides:
+#   # Require explicit confirmation before restarting any Docker container
+#   # (stricter than the default "moderate").
+#   docker_restart: "elevated"
+#
+#   # Trust ha_toggle_entity as a read-level action on this server because
+#   # all entities are test dummies (more permissive than default "moderate").
+#   ha_toggle_entity: "read"
+#
+#   # Lock down firewall editing to critical so it always creates a backup.
+#   system_firewall_edit: "critical"
+
+overrides: {}

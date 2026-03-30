@@ -1,0 +1,109 @@
+# claude-home-server — Server Configuration
+# ==========================================
+# Copy this file to the location expected by the server (default:
+# config/server.yaml relative to the project root, or the path passed to
+# load_config()) and edit it to match your environment.
+#
+# All sections are optional: missing keys fall back to the safe defaults
+# defined in src/config.py.
+
+# ---------------------------------------------------------------------------
+# Server identity
+# config_version is reserved for future automatic migration support.
+# ---------------------------------------------------------------------------
+server:
+  name: "My Home Server"
+  config_version: 1
+
+# ---------------------------------------------------------------------------
+# Service integrations
+# Set enabled: true only for services that are actually running.
+# token_file paths must point to files with permissions 600 owned by the
+# mcp-server system user.  Never embed tokens directly in this file.
+# ---------------------------------------------------------------------------
+services:
+
+  homeassistant:
+    enabled: true
+    url: "http://localhost:8123"
+    # File containing the Long-Lived Access Token (single line, no newline).
+    # Create at: http://<your-ha>:8123/profile → Long-Lived Access Tokens
+    token_file: "/opt/claude-home-server/secrets/ha_token"
+    # Root directory of the Home Assistant configuration.
+    config_path: "/opt/homeassistant/config"
+
+  plex:
+    enabled: true
+    url: "http://localhost:32400"
+    # File containing the Plex authentication token.
+    # Retrieve from: https://support.plex.tv/articles/204059436
+    token_file: "/opt/claude-home-server/secrets/plex_token"
+
+  docker:
+    enabled: true
+    # URL of the Tecnativa Docker Socket Proxy — never use the raw socket.
+    # The proxy limits what operations are permitted; see docs/ARCHITECTURE.md.
+    socket_proxy: "http://localhost:2375"
+    # Directories that contain docker-compose.yaml files managed by this
+    # server.  Used by docker_compose_* tools.
+    compose_paths:
+      - "/opt/docker-compose"
+
+# ---------------------------------------------------------------------------
+# Filesystem access control
+# allowed_paths and blocked_paths extend the hardcoded blocklist in
+# src/safety/path_validator.py (which always blocks /etc/shadow, SSH keys,
+# .env files, etc. regardless of this config).
+# ---------------------------------------------------------------------------
+filesystem:
+  # Paths that fs_read, fs_write, and fs_search are allowed to operate on.
+  # Default-deny: if a path is not on this list it is rejected.
+  allowed_paths:
+    - "/opt/homeassistant/config"
+    - "/opt/docker-compose"
+
+  # Additional paths to block even if they fall under an allowed prefix.
+  # The hardcoded blocklist is always applied first and cannot be overridden.
+  blocked_paths:
+    - "/etc/nginx/ssl"
+
+# ---------------------------------------------------------------------------
+# Security settings
+# ---------------------------------------------------------------------------
+security:
+  # TCP ports that system_firewall_edit must never remove or block.
+  # Port 22 (SSH) is always included regardless of this list.
+  protected_ports:
+    - 22
+
+  # Append-only audit log (chattr +a on ext4/xfs after installation).
+  # Every tool invocation — including read-only ones — is recorded here.
+  audit_log: "/var/log/claude-home-server/audit.log"
+
+  # Directory where automatic pre-change backups are stored.
+  backup_dir: "/var/backups/claude-home-server"
+
+  # How long to keep backup files (days).
+  backup_retention_days: 30
+
+  # Maximum number of backup files to keep per source file regardless of age.
+  backup_max_per_file: 50
+
+  # Circuit breaker thresholds to prevent runaway failures.
+  circuit_breaker:
+    # Stop retrying after this many consecutive tool failures.
+    max_consecutive_failures: 3
+    # Maximum number of critical-risk tool calls allowed in burst_window_minutes.
+    burst_limit_critical: 5
+    # Window duration for burst protection (minutes).
+    burst_window_minutes: 5
+
+# ---------------------------------------------------------------------------
+# HTTP client settings
+# ---------------------------------------------------------------------------
+http:
+  # Default timeout for Home Assistant and Plex API calls (seconds).
+  timeout_seconds: 30
+  # Extended timeout for long-running operations such as docker pull and
+  # system update (seconds).
+  timeout_long_seconds: 600
