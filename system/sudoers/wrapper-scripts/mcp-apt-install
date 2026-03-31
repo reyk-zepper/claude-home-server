@@ -1,0 +1,121 @@
+#!/bin/bash
+# mcp-apt-install — privileged wrapper for apt package installation
+#
+# Usage: mcp-apt-install <package>
+#   package — Debian package name, optionally with arch qualifier (e.g. curl:amd64)
+#             allowed characters: lowercase alphanum, dash, dot, colon
+#
+# Blocklist prevents installation of kernel images, bootloaders, and other
+# packages whose installation could break the running system.
+#
+# This script is intended to be called via sudo by the mcp-server user.
+# All arguments are validated strictly before any command is executed.
+#
+# Installation:
+#   sudo cp system/sudoers/wrapper-scripts/mcp-apt-install /usr/local/bin/
+#   sudo chown root:root /usr/local/bin/mcp-apt-install
+#   sudo chmod 755 /usr/local/bin/mcp-apt-install
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="mcp-apt-install"
+
+# ---------------------------------------------------------------------------
+# Blocklist patterns
+# Patterns are matched against the full package name using glob-style tests.
+# Add entries as bare strings — they are matched with case-insensitive prefix
+# and suffix glob checks in the validation section below.
+# ---------------------------------------------------------------------------
+
+# Each entry is a shell glob pattern matched against the full package name.
+readonly -a BLOCKED_PATTERNS=(
+    "*-dev"          # development headers (large, rarely needed on server)
+    "linux-image-*"  # kernel images — must not be installed ad-hoc
+    "linux-headers-*"
+    "linux-modules-*"
+    "grub*"          # bootloader — never touch via automation
+    "grub2*"
+    "shim*"          # UEFI shim — bootloader chain
+    "systemd"        # exact match: replacing the init system is off-limits
+    "systemd-sysv"
+    "init"
+    "libc6"          # core C library — upgrades require full dist-upgrade
+    "libc-bin"
+    "dpkg"           # package manager itself
+    "apt"            # package manager itself
+    "apt-get"
+    "sudo"           # privilege escalation tool
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+log() {
+    logger -t "${SCRIPT_NAME}" -- "$*"
+}
+
+die() {
+    echo "${SCRIPT_NAME}: error: $*" >&2
+    log "REJECTED args=[$*] reason=validation-failure"
+    exit 1
+}
+
+# match_pattern <string> <glob>
+# Returns 0 if string matches glob, 1 otherwise.
+match_pattern() {
+    local string="$1"
+    local pattern="$2"
+    # Use bash's own pattern matching (case-insensitive via nocasematch)
+    shopt -s nocasematch
+    [[ "${string}" == ${pattern} ]]
+    local result=$?
+    shopt -u nocasematch
+    return ${result}
+}
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+if [[ $# -ne 1 ]]; then
+    die "expected exactly 1 argument: <package>, got $#"
+fi
+
+PACKAGE="$1"
+
+# Validate package name characters.
+# Debian policy: lowercase alphanum, plus, dot, hyphen; must start with alphanum.
+# We also allow colon for arch qualifiers (e.g. curl:amd64).
+if ! [[ "${PACKAGE}" =~ ^[a-z0-9][a-z0-9+.:_-]*$ ]]; then
+    die "invalid package name '${PACKAGE}': must follow Debian naming policy (lowercase alphanum, +, ., :, -, _)"
+fi
+
+# Reject null bytes (extra safety — regex above prevents this already)
+if [[ "${PACKAGE}" == *$'\0'* ]]; then
+    die "package name must not contain null bytes"
+fi
+
+# Reject names that are suspiciously long
+if (( ${#PACKAGE} > 256 )); then
+    die "package name is too long (max 256 characters)"
+fi
+
+# Check against blocklist
+for pattern in "${BLOCKED_PATTERNS[@]}"; do
+    if match_pattern "${PACKAGE}" "${pattern}"; then
+        die "package '${PACKAGE}' matches blocked pattern '${pattern}' and cannot be installed through this wrapper"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Execute
+# ---------------------------------------------------------------------------
+
+log "EXEC package=${PACKAGE} caller=${SUDO_USER:-unknown}"
+
+# DEBIAN_FRONTEND=noninteractive prevents any interactive prompts that could
+# hang the process. APT_LISTCHANGES_FRONTEND=none suppresses the changelog
+# pager. Both are required for unattended installs.
+exec env DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none \
+    /usr/bin/apt-get install -y -- "${PACKAGE}"

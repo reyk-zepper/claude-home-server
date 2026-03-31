@@ -25,6 +25,8 @@ from src.config import load_config, load_permissions
 from src.modules.discovery import DiscoveryModule
 from src.modules.docker import DockerModule
 from src.modules.filesystem import FilesystemModule
+from src.modules.homeassistant import HomeAssistantModule
+from src.modules.plex import PlexModule
 from src.modules.system import SystemModule
 from src.permissions import PermissionEngine
 
@@ -103,16 +105,15 @@ def create_server() -> FastMCP:
     filesystem = FilesystemModule(config, permission_engine, audit_logger)
     mcp.mount(filesystem.create_server())
 
-    # Future modules (HomeAssistant, Plex) are mounted here as they are
-    # implemented:
-    #
-    #   from src.modules.homeassistant import HomeAssistantModule
-    #   ha = HomeAssistantModule(config, permission_engine, audit_logger)
-    #   mcp.mount(ha.create_server())
-    #
-    #   from src.modules.plex import PlexModule
-    #   plex = PlexModule(config, permission_engine, audit_logger)
-    #   mcp.mount(plex.create_server())
+    # Home Assistant module — HA REST API + config management.
+    if config.services.homeassistant.enabled:
+        ha = HomeAssistantModule(config, permission_engine, audit_logger)
+        mcp.mount(ha.create_server())
+
+    # Plex module — media server status, libraries, sessions, settings.
+    if config.services.plex.enabled:
+        plex = PlexModule(config, permission_engine, audit_logger)
+        mcp.mount(plex.create_server())
 
     _log.info("server_ready")
     return mcp

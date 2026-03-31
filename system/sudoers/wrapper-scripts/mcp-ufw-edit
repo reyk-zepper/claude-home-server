@@ -1,0 +1,88 @@
+#!/bin/bash
+# mcp-ufw-edit — privileged wrapper for UFW firewall rule management
+#
+# Usage: mcp-ufw-edit <action> <port> <proto>
+#   action — one of: allow deny delete
+#   port   — numeric port, 1-65535
+#   proto  — one of: tcp udp
+#
+# Protected constraint: port 22 (SSH) can never be deleted or denied.
+#
+# This script is intended to be called via sudo by the mcp-server user.
+# All arguments are validated strictly before any command is executed.
+#
+# Installation:
+#   sudo cp system/sudoers/wrapper-scripts/mcp-ufw-edit /usr/local/bin/
+#   sudo chown root:root /usr/local/bin/mcp-ufw-edit
+#   sudo chmod 755 /usr/local/bin/mcp-ufw-edit
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="mcp-ufw-edit"
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+readonly ALLOWED_ACTIONS="allow deny delete"
+readonly ALLOWED_PROTOS="tcp udp"
+readonly SSH_PORT=22
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+log() {
+    logger -t "${SCRIPT_NAME}" -- "$*"
+}
+
+die() {
+    echo "${SCRIPT_NAME}: error: $*" >&2
+    log "REJECTED args=[$*] reason=validation-failure"
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+if [[ $# -ne 3 ]]; then
+    die "expected exactly 3 arguments: <action> <port> <proto>, got $#"
+fi
+
+ACTION="$1"
+PORT="$2"
+PROTO="$3"
+
+# Validate action
+if ! echo "${ALLOWED_ACTIONS}" | grep -qw "${ACTION}"; then
+    die "invalid action '${ACTION}': must be one of: ${ALLOWED_ACTIONS}"
+fi
+
+# Validate port is strictly numeric (no leading zeros, no alphanumeric)
+if ! [[ "${PORT}" =~ ^[0-9]+$ ]]; then
+    die "invalid port '${PORT}': must be a numeric value"
+fi
+
+# Validate port range 1-65535
+if (( PORT < 1 || PORT > 65535 )); then
+    die "port ${PORT} is out of range: must be between 1 and 65535"
+fi
+
+# Validate protocol
+if ! echo "${ALLOWED_PROTOS}" | grep -qw "${PROTO}"; then
+    die "invalid protocol '${PROTO}': must be one of: ${ALLOWED_PROTOS}"
+fi
+
+# Protect SSH port: never allow deny or delete of port 22
+if (( PORT == SSH_PORT )) && [[ "${ACTION}" == "deny" || "${ACTION}" == "delete" ]]; then
+    die "port ${SSH_PORT} (SSH) is protected: '${ACTION}' is not permitted"
+fi
+
+# ---------------------------------------------------------------------------
+# Execute
+# ---------------------------------------------------------------------------
+
+log "EXEC action=${ACTION} port=${PORT} proto=${PROTO} caller=${SUDO_USER:-unknown}"
+
+exec /usr/sbin/ufw "${ACTION}" "${PORT}/${PROTO}"

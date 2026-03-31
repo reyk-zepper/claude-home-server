@@ -1,0 +1,83 @@
+# AppArmor profile for claude-home-server (mcp-server user)
+#
+# STATUS: Reference profile — NOT enforced in v1.
+#         Load in complain mode to collect denials before switching to enforce:
+#
+#   sudo apparmor_parser -C -W /etc/apparmor.d/claude-home-server
+#   sudo aa-complain /etc/apparmor.d/claude-home-server
+#
+#   Monitor denials:
+#   sudo journalctl -f -k | grep apparmor
+#
+# Installation (enforce mode — only after audit in complain mode):
+#   sudo cp system/apparmor/mcp-server-profile /etc/apparmor.d/claude-home-server
+#   sudo apparmor_parser -r /etc/apparmor.d/claude-home-server
+#   sudo aa-enforce /etc/apparmor.d/claude-home-server
+#
+# The profile covers the Python interpreter launched by run.sh as the
+# mcp-server user. Adjust the python3 path if your install uses a different
+# interpreter version (e.g. /usr/bin/python3.12).
+
+profile claude-home-server /opt/claude-home-server/.venv/bin/python3 flags=(complain) {
+
+  # --- Abstractions --------------------------------------------------------
+  # Standard base rules: locale, libc, dynamic linker, /proc/self/...
+  #include <abstractions/base>
+  # Python interpreter internals (stdlib paths, site-packages, .pyc files)
+  #include <abstractions/python>
+  # Name resolution needed for httpx outbound calls (Home Assistant, Plex)
+  #include <abstractions/nameservice>
+
+  # --- Python & venv -------------------------------------------------------
+  # Allow the interpreter to read the entire installation tree.
+  /opt/claude-home-server/                  r,
+  /opt/claude-home-server/**                r,
+  # The venv binary itself must be executable.
+  /opt/claude-home-server/.venv/bin/python3 ix,
+
+  # --- Writable paths ------------------------------------------------------
+  # Configuration files (server.yaml, permissions.yaml, env overrides)
+  /opt/claude-home-server/config/           rw,
+  /opt/claude-home-server/config/**         rw,
+  # Secrets directory (API tokens, passwords — never log these)
+  /opt/claude-home-server/secrets/          rw,
+  /opt/claude-home-server/secrets/**        rw,
+  # Backup output written by filesystem backup tools
+  /var/backups/claude-home-server/          rw,
+  /var/backups/claude-home-server/**        rw,
+
+  # --- Logging -------------------------------------------------------------
+  /var/log/claude-home-server/              rw,
+  /var/log/claude-home-server/**            rw,
+
+  # --- Networking ----------------------------------------------------------
+  # Outbound TCP for Home Assistant (port 8123), Plex (port 32400),
+  # the Docker socket proxy (127.0.0.1:2375), and general httpx calls.
+  network inet tcp,
+
+  # --- /proc and /sys (read-only, scoped) ----------------------------------
+  # Required by structlog and Python's os module for process metadata.
+  /proc/self/                               r,
+  /proc/self/**                             r,
+  /proc/sys/kernel/osrelease                r,
+
+  # --- Temporary files -----------------------------------------------------
+  # Python may write .pyc files to /tmp during import; allow but scope tightly.
+  /tmp/claude-home-server-*/                rw,
+  /tmp/claude-home-server-**                rw,
+
+  # --- Explicit denials (belt-and-suspenders) ------------------------------
+  # Even if an abstraction would allow these, deny them here explicitly.
+  # Raw socket access to Docker would bypass the proxy entirely.
+  deny /var/run/docker.sock                 rw,
+  # No access to other users' home directories or system credential stores.
+  deny /root/**                             rwklx,
+  deny /home/**                             rwklx,
+  deny /etc/shadow                          rwklx,
+  deny /etc/sudoers                         rwklx,
+  deny /etc/sudoers.d/**                    rwklx,
+  # No kernel module loading.
+  deny /lib/modules/**                      x,
+
+  # Everything else is denied by default (AppArmor default-deny model).
+}

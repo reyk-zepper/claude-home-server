@@ -1,0 +1,100 @@
+#!/bin/bash
+# mcp-systemctl — privileged wrapper for read-only systemctl inspection
+#
+# Usage: mcp-systemctl <action> [args...]
+#   action — one of: status is-active is-enabled list-units list-unit-files
+#
+# Only read-only/inspection actions are permitted. State-changing operations
+# (enable, disable, mask, start, stop, restart) are explicitly excluded.
+# Use mcp-restart-service for start/stop/restart.
+#
+# This script is intended to be called via sudo by the mcp-server user.
+# All arguments are validated strictly before any command is executed.
+#
+# Installation:
+#   sudo cp system/sudoers/wrapper-scripts/mcp-systemctl /usr/local/bin/
+#   sudo chown root:root /usr/local/bin/mcp-systemctl
+#   sudo chmod 755 /usr/local/bin/mcp-systemctl
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="mcp-systemctl"
+
+# ---------------------------------------------------------------------------
+# Allowed read-only actions
+# ---------------------------------------------------------------------------
+
+readonly ALLOWED_ACTIONS="status is-active is-enabled list-units list-unit-files"
+
+# Maximum number of additional arguments accepted after the action.
+# list-units and list-unit-files accept optional filter args; status,
+# is-active, is-enabled accept one unit name.
+readonly MAX_EXTRA_ARGS=5
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+log() {
+    logger -t "${SCRIPT_NAME}" -- "$*"
+}
+
+die() {
+    echo "${SCRIPT_NAME}: error: $*" >&2
+    log "REJECTED args=[$*] reason=validation-failure"
+    exit 1
+}
+
+validate_unit_arg() {
+    local arg="$1"
+    # Unit names: alphanumeric, @, ., _, -, plus the special glob * for
+    # list-units patterns.  No slashes, no shell metacharacters.
+    if ! [[ "${arg}" =~ ^[a-zA-Z0-9@._*-]+$ ]]; then
+        die "invalid unit/filter argument '${arg}': only [a-zA-Z0-9@._*-] are allowed"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+if [[ $# -lt 1 ]]; then
+    die "expected at least 1 argument: <action> [args...], got $#"
+fi
+
+ACTION="$1"
+shift  # remaining args are optional unit names / filters
+
+# Validate action against the allowed read-only set
+if ! echo "${ALLOWED_ACTIONS}" | grep -qw "${ACTION}"; then
+    die "invalid action '${ACTION}': must be one of: ${ALLOWED_ACTIONS}"
+fi
+
+# Cap the number of extra arguments to prevent argument-list abuse
+if (( $# > MAX_EXTRA_ARGS )); then
+    die "too many arguments: at most ${MAX_EXTRA_ARGS} extra arguments are allowed"
+fi
+
+# Validate each additional argument (unit names, globs, --flags)
+VALIDATED_ARGS=()
+for arg in "$@"; do
+    # Allow a small set of safe flags that list-units / list-unit-files accept
+    if [[ "${arg}" == "--all" || "${arg}" == "--full" || "${arg}" == "--no-pager" || "${arg}" == "--plain" ]]; then
+        VALIDATED_ARGS+=("${arg}")
+        continue
+    fi
+
+    # Otherwise treat as a unit name / pattern
+    validate_unit_arg "${arg}"
+    VALIDATED_ARGS+=("${arg}")
+done
+
+# ---------------------------------------------------------------------------
+# Execute
+# ---------------------------------------------------------------------------
+
+log "EXEC action=${ACTION} args=[${VALIDATED_ARGS[*]:-}] caller=${SUDO_USER:-unknown}"
+
+# Always pass --no-pager to prevent pager programs (less/more) from being
+# spawned in a non-interactive context, which would hang indefinitely.
+exec /bin/systemctl --no-pager "${ACTION}" "${VALIDATED_ARGS[@]+"${VALIDATED_ARGS[@]}"}"

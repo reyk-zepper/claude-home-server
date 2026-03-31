@@ -1,0 +1,87 @@
+#!/bin/bash
+# mcp-restart-service — privileged wrapper for systemd service control
+#
+# Usage: mcp-restart-service <action> <service>
+#   action  — one of: start stop restart status
+#   service — systemd unit name (alphanumeric, dash, underscore, dot, @)
+#
+# This script is intended to be called via sudo by the mcp-server user.
+# All arguments are validated strictly before any command is executed.
+#
+# Installation:
+#   sudo cp system/sudoers/wrapper-scripts/mcp-restart-service /usr/local/bin/
+#   sudo chown root:root /usr/local/bin/mcp-restart-service
+#   sudo chmod 755 /usr/local/bin/mcp-restart-service
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="mcp-restart-service"
+
+# ---------------------------------------------------------------------------
+# Allowed values
+# ---------------------------------------------------------------------------
+
+readonly ALLOWED_ACTIONS="start stop restart status"
+
+# Services that must never be managed through this wrapper.
+# Blocking self-restart (mcp-server) prevents accidental privilege loops.
+# Blocking SSH prevents lockout. Blocking systemd-* prevents core OS breakage.
+readonly BLOCKLIST="ssh sshd mcp-server"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+log() {
+    logger -t "${SCRIPT_NAME}" -- "$*"
+}
+
+die() {
+    echo "${SCRIPT_NAME}: error: $*" >&2
+    log "REJECTED args=[$*] reason=validation-failure"
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+if [[ $# -ne 2 ]]; then
+    die "expected exactly 2 arguments: <action> <service>, got $#"
+fi
+
+ACTION="$1"
+SERVICE="$2"
+
+# Validate action is in the allowed set (exact word match)
+if ! echo "${ALLOWED_ACTIONS}" | grep -qw "${ACTION}"; then
+    die "invalid action '${ACTION}': must be one of: ${ALLOWED_ACTIONS}"
+fi
+
+# Validate service name: alphanumeric, dash, underscore, dot, @ only.
+# This matches systemd's own naming rules and prevents shell injection.
+if ! [[ "${SERVICE}" =~ ^[a-zA-Z0-9@._-]+$ ]]; then
+    die "invalid service name '${SERVICE}': only [a-zA-Z0-9@._-] are allowed"
+fi
+
+# Reject empty string after regex (belt-and-suspenders)
+if [[ -z "${SERVICE}" ]]; then
+    die "service name must not be empty"
+fi
+
+# Check blocklist — reject exact name and any systemd-* prefix
+if echo "${BLOCKLIST}" | grep -qw "${SERVICE}"; then
+    die "service '${SERVICE}' is on the blocklist and cannot be managed here"
+fi
+
+if [[ "${SERVICE}" == systemd-* ]]; then
+    die "systemd core units (systemd-*) cannot be managed through this wrapper"
+fi
+
+# ---------------------------------------------------------------------------
+# Execute
+# ---------------------------------------------------------------------------
+
+log "EXEC action=${ACTION} service=${SERVICE} caller=${SUDO_USER:-unknown}"
+
+exec /bin/systemctl "${ACTION}" "${SERVICE}"

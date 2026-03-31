@@ -1,0 +1,21 @@
+# /etc/sudoers.d/mcp-server
+#
+# Grants the mcp-server user NOPASSWD access to exactly four wrapper scripts.
+# These scripts perform their own strict input validation before executing any
+# privileged command, so the attack surface is limited to those validated paths.
+#
+# Installation:
+#   sudo cp system/sudoers/mcp-server /etc/sudoers.d/mcp-server
+#   sudo chmod 440 /etc/sudoers.d/mcp-server
+#   sudo visudo -c -f /etc/sudoers.d/mcp-server   # validate before use
+#
+# The Defaults entry locks down the environment so that PATH and other
+# environment variables cannot be inherited from the calling process.
+
+Defaults:mcp-server !env_reset, env_delete+=PATH
+Defaults:mcp-server secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+mcp-server ALL=(root) NOPASSWD: /usr/local/bin/mcp-restart-service
+mcp-server ALL=(root) NOPASSWD: /usr/local/bin/mcp-ufw-edit
+mcp-server ALL=(root) NOPASSWD: /usr/local/bin/mcp-apt-install
+mcp-server ALL=(root) NOPASSWD: /usr/local/bin/mcp-systemctl

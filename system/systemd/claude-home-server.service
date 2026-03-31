@@ -1,0 +1,57 @@
+[Unit]
+Description=claude-home-server MCP Server
+Documentation=https://github.com/reyk-zepper/claude-home-server
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=mcp-server
+Group=mcp-server
+WorkingDirectory=/opt/claude-home-server
+
+# Launch the MCP server in stdio mode.
+# Claude Code connects via SSH and communicates over stdin/stdout.
+# This unit is only needed when running the server as a persistent daemon
+# (e.g. for testing) — the normal mode is an on-demand SSH stdio session.
+ExecStart=/opt/claude-home-server/run.sh
+
+# Never restart automatically: the MCP process exits when the SSH session
+# closes. Restarting would produce a dangling process with no client.
+Restart=no
+
+# Hardened execution environment
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/claude-home-server /var/log/claude-home-server /var/backups/claude-home-server
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/opt/claude-home-server/config/env
+
+# Logging: send stdout/stderr to the journal, tagged for easy filtering
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-home-server
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target
