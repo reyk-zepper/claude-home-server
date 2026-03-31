@@ -23,6 +23,9 @@ from fastmcp import FastMCP
 from src.audit import AuditLogger
 from src.config import load_config, load_permissions
 from src.modules.discovery import DiscoveryModule
+from src.modules.docker import DockerModule
+from src.modules.filesystem import FilesystemModule
+from src.modules.system import SystemModule
 from src.permissions import PermissionEngine
 
 # ---------------------------------------------------------------------------
@@ -88,15 +91,20 @@ def create_server() -> FastMCP:
     discovery = DiscoveryModule(config, permission_engine, audit_logger)
     mcp.mount(discovery.create_server())
 
-    # Future modules are mounted here as they are implemented:
-    #
-    #   from src.modules.system import SystemModule
-    #   system = SystemModule(config, permission_engine, audit_logger)
-    #   mcp.mount(system.create_server())
-    #
-    #   from src.modules.docker import DockerModule
-    #   docker = DockerModule(config, permission_engine, audit_logger)
-    #   mcp.mount(docker.create_server())
+    # System module — OS info, service management, package install, firewall.
+    system = SystemModule(config, permission_engine, audit_logger)
+    mcp.mount(system.create_server())
+
+    # Docker module — container lifecycle, compose, images, prune.
+    docker = DockerModule(config, permission_engine, audit_logger)
+    mcp.mount(docker.create_server())
+
+    # Filesystem module — read/write/search/diff/backup with PathValidator.
+    filesystem = FilesystemModule(config, permission_engine, audit_logger)
+    mcp.mount(filesystem.create_server())
+
+    # Future modules (HomeAssistant, Plex) are mounted here as they are
+    # implemented:
     #
     #   from src.modules.homeassistant import HomeAssistantModule
     #   ha = HomeAssistantModule(config, permission_engine, audit_logger)
@@ -105,10 +113,6 @@ def create_server() -> FastMCP:
     #   from src.modules.plex import PlexModule
     #   plex = PlexModule(config, permission_engine, audit_logger)
     #   mcp.mount(plex.create_server())
-    #
-    #   from src.modules.filesystem import FilesystemModule
-    #   fs = FilesystemModule(config, permission_engine, audit_logger)
-    #   mcp.mount(fs.create_server())
 
     _log.info("server_ready")
     return mcp
