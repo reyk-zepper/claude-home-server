@@ -56,8 +56,8 @@ claude-home-server ist diese Bruecke: ein MCP-Server (Model Context Protocol), d
 - **Docker verwalten**: Container starten/stoppen, Compose-Dateien bearbeiten und deployen, Images aktualisieren
 - **System administrieren**: Services neustarten, Pakete installieren, Firewall konfigurieren, Updates einspielen
 - **Dateien bearbeiten**: Konfigurationsdateien lesen, schreiben, durchsuchen, vergleichen — mit automatischen Backups
-- **Home Assistant steuern** (Phase 3): Entitaeten schalten, Automationen erstellen, Konfiguration bearbeiten
-- **Plex verwalten** (Phase 3): Bibliotheken scannen, Benutzer verwalten, Einstellungen aendern
+- **Home Assistant steuern**: Entitaeten schalten, Automationen erstellen, Konfiguration bearbeiten
+- **Plex verwalten**: Bibliotheken scannen, Benutzer verwalten, Einstellungen aendern
 
 ## Architekturentscheidungen
 
@@ -181,6 +181,38 @@ Vor **jeder** Schreiboperation (fs_write, compose_edit) wird automatisch ein Bac
 | `fs_write` | CRITICAL | Datei schreiben (Backup + Allowlist) |
 | `fs_backup_restore` | CRITICAL | Backup wiederherstellen |
 
+### Home Assistant (13 Tools)
+
+| Tool | Stufe | Beschreibung |
+|---|---|---|
+| `ha_query` | READ | HA-Status, Entitaeten, Verlauf abfragen |
+| `ha_config_query` | READ | Automationen, Szenen, Skripte auflisten |
+| `ha_logs` | READ | HA-Fehlerlog abrufen |
+| `ha_check_config` | READ | HA-Konfigurationscheck ausloesen |
+| `ha_toggle_entity` | MODERATE | Entitaet ein-/ausschalten |
+| `ha_call_service` | MODERATE | HA-Service aufrufen |
+| `ha_trigger_automation` | MODERATE | Automation manuell ausloesen |
+| `ha_activate_scene` | MODERATE | Szene aktivieren |
+| `ha_create_automation` | ELEVATED | Neue Automation erstellen (YAML-validiert) |
+| `ha_edit_automation` | ELEVATED | Bestehende Automation bearbeiten |
+| `ha_delete_automation` | ELEVATED | Automation loeschen |
+| `ha_restart` | ELEVATED | Home Assistant neustarten |
+| `ha_edit_config` | CRITICAL | HA-Konfigurationsdatei bearbeiten (Backup + Validierung) |
+
+### Plex (9 Tools)
+
+| Tool | Stufe | Beschreibung |
+|---|---|---|
+| `plex_status` | READ | Server-Status und Version |
+| `plex_libraries` | READ | Mediatheken auflisten |
+| `plex_sessions` | READ | Aktive Wiedergabe-Sessions |
+| `plex_users` | READ | Benutzer auflisten |
+| `plex_scan_library` | MODERATE | Mediathek-Scan ausloesen |
+| `plex_optimize` | MODERATE | Mediathek optimieren |
+| `plex_empty_trash` | MODERATE | Papierkorb leeren |
+| `plex_manage_user` | ELEVATED | Benutzerrechte aendern |
+| `plex_settings` | ELEVATED | Server-Einstellung aendern |
+
 ## Installationsanleitung
 
 ### Voraussetzungen
@@ -190,127 +222,39 @@ Vor **jeder** Schreiboperation (fs_write, compose_edit) wird automatisch ein Bac
 - SSH-Zugang zum Server
 - Docker (optional, fuer Docker-Tools)
 
-### Schritt 1: System-User anlegen
+### Schnellinstallation
 
 ```bash
-# Auf dem Ubuntu-Server:
-sudo useradd -r -m -d /opt/claude-home-server -s /usr/sbin/nologin mcp-server
+curl -fsSL https://raw.githubusercontent.com/reyk-zepper/claude-home-server/main/system/install.sh | sudo bash
 ```
 
-### Schritt 2: Projekt installieren
+### Verifizierte Installation (empfohlen)
 
 ```bash
-sudo -u mcp-server git clone https://github.com/reyk-zepper/claude-home-server.git /opt/claude-home-server
-cd /opt/claude-home-server
-sudo -u mcp-server python3 -m venv .venv
-sudo -u mcp-server .venv/bin/pip install -e .
+wget https://github.com/reyk-zepper/claude-home-server/releases/latest/download/install.sh
+wget https://github.com/reyk-zepper/claude-home-server/releases/latest/download/install.sh.sha256
+sha256sum -c install.sh.sha256
+sudo bash install.sh
 ```
 
-### Schritt 3: Konfiguration erstellen
+Der Installer:
+1. Erstellt den `mcp-server` System-User
+2. Richtet SSH-Key mit `command=,restrict` ein
+3. Installiert Sudoers-Wrapper fuer privilegierte Operationen
+4. Deployt den Docker Socket Proxy (Tecnativa)
+5. Erstellt Python-Umgebung mit gepinnten Abhaengigkeiten
+6. Legt Verzeichnisstruktur an (config/, secrets/, backups/)
+7. Richtet Audit-Log ein (append-only)
+8. Installiert optional systemd-Service und AppArmor-Profil
+9. Startet den interaktiven **Setup-Wizard**
 
-```bash
-# Konfigurationsdateien kopieren
-sudo -u mcp-server cp config/server.yaml config/server.local.yaml
-sudo -u mcp-server cp config/permissions.yaml config/permissions.local.yaml
+Der Setup-Wizard erkennt automatisch laufende Dienste (Docker, Home Assistant, Plex), fragt nach Tokens, testet die Verbindung und generiert die Konfiguration.
 
-# Server-Konfiguration anpassen
-sudo -u mcp-server nano config/server.local.yaml
-```
+Unterstuetzte Modi: `--upgrade`, `--repair`, `--uninstall`
 
-Passe mindestens an:
-- `services.docker.enabled: true` und `compose_paths`
-- `filesystem.allowed_paths` — Verzeichnisse, auf die Claude zugreifen darf
-- Service-URLs und Token-Dateien
+### Claude Code konfigurieren
 
-### Schritt 4: Secrets anlegen
-
-```bash
-# Verzeichnis mit eingeschraenkten Rechten
-sudo mkdir -p /opt/claude-home-server/secrets
-sudo chown mcp-server:mcp-server /opt/claude-home-server/secrets
-sudo chmod 700 /opt/claude-home-server/secrets
-
-# Home Assistant Token (aus HA-Profil kopieren)
-echo "dein-ha-long-lived-token" | sudo -u mcp-server tee /opt/claude-home-server/secrets/ha_token > /dev/null
-sudo chmod 600 /opt/claude-home-server/secrets/ha_token
-
-# Plex Token
-echo "dein-plex-token" | sudo -u mcp-server tee /opt/claude-home-server/secrets/plex_token > /dev/null
-sudo chmod 600 /opt/claude-home-server/secrets/plex_token
-```
-
-### Schritt 5: Startskript erstellen
-
-```bash
-cat << 'SCRIPT' | sudo tee /opt/claude-home-server/run.sh
-#!/bin/bash
-cd /opt/claude-home-server
-exec .venv/bin/claude-home-server
-SCRIPT
-sudo chmod 755 /opt/claude-home-server/run.sh
-```
-
-### Schritt 6: SSH-Key einrichten
-
-```bash
-# Auf deinem lokalen Rechner (Mac/PC):
-ssh-keygen -t ed25519 -C "claude-home-server" -f ~/.ssh/claude_home_server
-
-# Public Key auf den Server kopieren — mit command-Restriction:
-echo "command=\"/opt/claude-home-server/run.sh\",restrict $(cat ~/.ssh/claude_home_server.pub)" | \
-  ssh dein-user@server-ip "sudo -u mcp-server tee -a /opt/claude-home-server/.ssh/authorized_keys"
-```
-
-### Schritt 7: Sudo-Wrapper einrichten
-
-```bash
-# Wrapper-Skripte fuer privilegierte Operationen
-sudo cp /opt/claude-home-server/scripts/wrappers/* /usr/local/bin/
-sudo chmod 755 /usr/local/bin/mcp-*
-
-# Sudoers-Konfiguration
-cat << 'SUDOERS' | sudo tee /etc/sudoers.d/mcp-server
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-service-restart
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-service-toggle
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-apt-upgrade
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-apt-install
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-ufw-edit
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-reboot
-SUDOERS
-sudo chmod 440 /etc/sudoers.d/mcp-server
-```
-
-### Schritt 8: Docker Socket Proxy (optional)
-
-```bash
-# docker-compose.yaml fuer den Socket Proxy
-cat << 'COMPOSE' | sudo tee /opt/docker-compose/socket-proxy/docker-compose.yaml
-services:
-  socket-proxy:
-    image: tecnativa/docker-socket-proxy
-    restart: always
-    environment:
-      CONTAINERS: 1
-      IMAGES: 1
-      NETWORKS: 1
-      POST: 1
-      CONTAINERS_CREATE: 0
-      EXEC: 0
-      BUILD: 0
-      COMMIT: 0
-      VOLUMES: 0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "127.0.0.1:2375:2375"
-COMPOSE
-
-cd /opt/docker-compose/socket-proxy && docker compose up -d
-```
-
-### Schritt 9: Claude Code konfigurieren
-
-Fuege in deine Claude Code MCP-Konfiguration ein:
+Fuege in deine Claude Code MCP-Konfiguration ein (`~/.claude/settings.json`):
 
 ```json
 {
@@ -328,13 +272,11 @@ Fuege in deine Claude Code MCP-Konfiguration ein:
 }
 ```
 
-### Schritt 10: Testen
+### Testen
 
 Starte Claude Code und frage:
 
 > "Analysiere meinen Homeserver. Was laeuft dort alles?"
-
-Claude nutzt automatisch das `discover`-Tool und gibt dir einen vollstaendigen Ueberblick.
 
 ## Konfiguration
 
@@ -398,8 +340,8 @@ claude-home-server is that bridge: an MCP server (Model Context Protocol) that r
 - **Manage Docker**: Start/stop containers, edit and deploy compose files, update images
 - **Administer the system**: Restart services, install packages, configure the firewall, apply updates
 - **Edit files**: Read, write, search, and compare configuration files — with automatic backups
-- **Control Home Assistant** (Phase 3): Toggle entities, create automations, edit configuration
-- **Manage Plex** (Phase 3): Scan libraries, manage users, change settings
+- **Control Home Assistant**: Toggle entities, create automations, edit configuration
+- **Manage Plex**: Scan libraries, manage users, change settings
 
 ## Architecture decisions
 
@@ -523,6 +465,38 @@ Before **every** write operation (fs_write, compose_edit), a backup is automatic
 | `fs_write` | CRITICAL | Write file (backup + allowlist) |
 | `fs_backup_restore` | CRITICAL | Restore from backup |
 
+### Home Assistant (13 tools)
+
+| Tool | Level | Description |
+|---|---|---|
+| `ha_query` | READ | Query HA status, entities, history |
+| `ha_config_query` | READ | List automations, scenes, scripts |
+| `ha_logs` | READ | Retrieve HA error log |
+| `ha_check_config` | READ | Trigger HA config check |
+| `ha_toggle_entity` | MODERATE | Toggle entity on/off |
+| `ha_call_service` | MODERATE | Call any HA service |
+| `ha_trigger_automation` | MODERATE | Manually trigger automation |
+| `ha_activate_scene` | MODERATE | Activate a scene |
+| `ha_create_automation` | ELEVATED | Create automation (YAML-validated) |
+| `ha_edit_automation` | ELEVATED | Edit existing automation |
+| `ha_delete_automation` | ELEVATED | Delete an automation |
+| `ha_restart` | ELEVATED | Restart Home Assistant |
+| `ha_edit_config` | CRITICAL | Edit HA config file (backup + validation) |
+
+### Plex (9 tools)
+
+| Tool | Level | Description |
+|---|---|---|
+| `plex_status` | READ | Server status and version |
+| `plex_libraries` | READ | List media libraries |
+| `plex_sessions` | READ | Active playback sessions |
+| `plex_users` | READ | List users |
+| `plex_scan_library` | MODERATE | Trigger library scan |
+| `plex_optimize` | MODERATE | Optimize library |
+| `plex_empty_trash` | MODERATE | Empty library trash |
+| `plex_manage_user` | ELEVATED | Modify user permissions |
+| `plex_settings` | ELEVATED | Update server preference |
+
 ## Installation guide
 
 ### Prerequisites
@@ -532,127 +506,39 @@ Before **every** write operation (fs_write, compose_edit), a backup is automatic
 - SSH access to the server
 - Docker (optional, for Docker tools)
 
-### Step 1: Create system user
+### Quick install
 
 ```bash
-# On the Ubuntu server:
-sudo useradd -r -m -d /opt/claude-home-server -s /usr/sbin/nologin mcp-server
+curl -fsSL https://raw.githubusercontent.com/reyk-zepper/claude-home-server/main/system/install.sh | sudo bash
 ```
 
-### Step 2: Install the project
+### Verified install (recommended)
 
 ```bash
-sudo -u mcp-server git clone https://github.com/reyk-zepper/claude-home-server.git /opt/claude-home-server
-cd /opt/claude-home-server
-sudo -u mcp-server python3 -m venv .venv
-sudo -u mcp-server .venv/bin/pip install -e .
+wget https://github.com/reyk-zepper/claude-home-server/releases/latest/download/install.sh
+wget https://github.com/reyk-zepper/claude-home-server/releases/latest/download/install.sh.sha256
+sha256sum -c install.sh.sha256
+sudo bash install.sh
 ```
 
-### Step 3: Create configuration
+The installer:
+1. Creates the `mcp-server` system user
+2. Sets up SSH key with `command=,restrict`
+3. Installs sudoers wrappers for privileged operations
+4. Deploys Docker Socket Proxy (Tecnativa)
+5. Creates Python environment with pinned dependencies
+6. Sets up directory structure (config/, secrets/, backups/)
+7. Configures audit log (append-only)
+8. Optionally installs systemd service and AppArmor profile
+9. Launches the interactive **Setup Wizard**
 
-```bash
-# Copy configuration templates
-sudo -u mcp-server cp config/server.yaml config/server.local.yaml
-sudo -u mcp-server cp config/permissions.yaml config/permissions.local.yaml
+The setup wizard auto-detects running services (Docker, Home Assistant, Plex), prompts for tokens, tests connectivity, and generates configuration.
 
-# Edit server configuration
-sudo -u mcp-server nano config/server.local.yaml
-```
+Supported modes: `--upgrade`, `--repair`, `--uninstall`
 
-At minimum, configure:
-- `services.docker.enabled: true` and `compose_paths`
-- `filesystem.allowed_paths` — directories Claude is allowed to access
-- Service URLs and token file paths
+### Configure Claude Code
 
-### Step 4: Set up secrets
-
-```bash
-# Create directory with restricted permissions
-sudo mkdir -p /opt/claude-home-server/secrets
-sudo chown mcp-server:mcp-server /opt/claude-home-server/secrets
-sudo chmod 700 /opt/claude-home-server/secrets
-
-# Home Assistant token (copy from HA profile page)
-echo "your-ha-long-lived-token" | sudo -u mcp-server tee /opt/claude-home-server/secrets/ha_token > /dev/null
-sudo chmod 600 /opt/claude-home-server/secrets/ha_token
-
-# Plex token
-echo "your-plex-token" | sudo -u mcp-server tee /opt/claude-home-server/secrets/plex_token > /dev/null
-sudo chmod 600 /opt/claude-home-server/secrets/plex_token
-```
-
-### Step 5: Create startup script
-
-```bash
-cat << 'SCRIPT' | sudo tee /opt/claude-home-server/run.sh
-#!/bin/bash
-cd /opt/claude-home-server
-exec .venv/bin/claude-home-server
-SCRIPT
-sudo chmod 755 /opt/claude-home-server/run.sh
-```
-
-### Step 6: Set up SSH key
-
-```bash
-# On your local machine (Mac/PC):
-ssh-keygen -t ed25519 -C "claude-home-server" -f ~/.ssh/claude_home_server
-
-# Copy public key to server — with command restriction:
-echo "command=\"/opt/claude-home-server/run.sh\",restrict $(cat ~/.ssh/claude_home_server.pub)" | \
-  ssh your-user@server-ip "sudo -u mcp-server tee -a /opt/claude-home-server/.ssh/authorized_keys"
-```
-
-### Step 7: Set up sudo wrappers
-
-```bash
-# Install wrapper scripts for privileged operations
-sudo cp /opt/claude-home-server/scripts/wrappers/* /usr/local/bin/
-sudo chmod 755 /usr/local/bin/mcp-*
-
-# Configure sudoers
-cat << 'SUDOERS' | sudo tee /etc/sudoers.d/mcp-server
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-service-restart
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-service-toggle
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-apt-upgrade
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-apt-install
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-ufw-edit
-mcp-server ALL=(ALL) NOPASSWD: /usr/local/bin/mcp-reboot
-SUDOERS
-sudo chmod 440 /etc/sudoers.d/mcp-server
-```
-
-### Step 8: Docker Socket Proxy (optional)
-
-```bash
-# docker-compose.yaml for the socket proxy
-cat << 'COMPOSE' | sudo tee /opt/docker-compose/socket-proxy/docker-compose.yaml
-services:
-  socket-proxy:
-    image: tecnativa/docker-socket-proxy
-    restart: always
-    environment:
-      CONTAINERS: 1
-      IMAGES: 1
-      NETWORKS: 1
-      POST: 1
-      CONTAINERS_CREATE: 0
-      EXEC: 0
-      BUILD: 0
-      COMMIT: 0
-      VOLUMES: 0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "127.0.0.1:2375:2375"
-COMPOSE
-
-cd /opt/docker-compose/socket-proxy && docker compose up -d
-```
-
-### Step 9: Configure Claude Code
-
-Add to your Claude Code MCP configuration:
+Add to your Claude Code MCP configuration (`~/.claude/settings.json`):
 
 ```json
 {
@@ -670,13 +556,11 @@ Add to your Claude Code MCP configuration:
 }
 ```
 
-### Step 10: Test it
+### Test it
 
 Start Claude Code and ask:
 
 > "Analyze my home server. What's running on it?"
-
-Claude will automatically use the `discover` tool and give you a complete overview.
 
 ## Configuration
 
@@ -738,15 +622,29 @@ python3 -m pytest tests/ -v
 |---|---|---|
 | Phase 1: Foundation | Done | Safety layer, permissions, audit, subprocess hardening, discovery |
 | Phase 2: Core Modules | Done | System, Docker, Filesystem modules + Compose Validator |
-| Phase 3: Service Modules | Planned | Home Assistant, Plex modules |
-| Phase 4: Release | Planned | install.sh, setup wizard, documentation, GitHub release |
+| Phase 3: Service Modules | Done | Home Assistant, Plex modules + HA Config Validator |
+| Phase 4: Release | Done | install.sh, setup wizard, sudoers wrappers, docs, system hardening |
 
 ### Stats
 
-- **33 tools** across 4 modules
-- **541 tests** (unit + integration + security)
-- **75% code coverage**
-- **7 security layers** (SSH, OS separation, input validation, path validation, output filtering, compose validation, circuit breaker)
+- **55 tools** across 6 modules
+- **782 tests** (unit + integration + security)
+- **81% code coverage**
+- **8 security layers** (SSH, OS separation, input validation, path validation, output filtering, compose validation, HA config validation, circuit breaker)
+
+## Dokumentation
+
+- [Architektur](docs/ARCHITECTURE.md) — Modulstruktur, Datenfluss, Sicherheitsebenen
+- [Konfiguration](docs/CONFIGURATION.md) — Vollstaendige Referenz fuer server.yaml und permissions.yaml
+- [Bedrohungsmodell](docs/THREAT_MODEL.md) — Angriffsvektoren, Mitigationen, Vertrauensgrenzen
+- [Sicherheit](SECURITY.md) — Schwachstellen melden
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — Module structure, data flow, security layers
+- [Configuration](docs/CONFIGURATION.md) — Complete reference for server.yaml and permissions.yaml
+- [Threat Model](docs/THREAT_MODEL.md) — Attack vectors, mitigations, trust boundaries
+- [Security](SECURITY.md) — Vulnerability disclosure
 
 ## License
 
