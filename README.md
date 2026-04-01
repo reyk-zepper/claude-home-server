@@ -1,18 +1,18 @@
 # claude-home-server
 
-**MCP Server zur Verwaltung privater Ubuntu-Homeserver durch Claude Code.**
-**MCP server for managing private Ubuntu home servers through Claude Code.**
+**MCP Server zur Verwaltung privater Ubuntu-Homeserver — kompatibel mit jedem MCP-faehigen Client.**
+**MCP server for managing private Ubuntu home servers — compatible with any MCP-capable client.**
 
 ---
 
-Claude Code verbindet sich per SSH mit deinem Server und kann ihn vollstaendig verwalten: Docker-Container, Home Assistant, Plex, System-Administration, Dateien — alles ueber strukturierte, abgesicherte Tools mit 4-stufigem Berechtigungssystem.
+Jeder MCP-kompatible Client (Claude Code, Cursor, VS Code Copilot, OpenAI Codex CLI, Windsurf u.a.) verbindet sich per SSH mit deinem Server und kann ihn vollstaendig verwalten: Docker-Container, Home Assistant, Plex, System-Administration, Dateien — alles ueber strukturierte, abgesicherte Tools mit 4-stufigem Berechtigungssystem.
 
-Claude Code connects via SSH to your server and manages it through structured, secured tools with a 4-tier permission system: Docker containers, Home Assistant, Plex, system administration, files — everything.
+Any MCP-compatible client (Claude Code, Cursor, VS Code Copilot, OpenAI Codex CLI, Windsurf, etc.) connects via SSH to your server and manages it through structured, secured tools with a 4-tier permission system: Docker containers, Home Assistant, Plex, system administration, files — everything.
 
 ```
 ┌─────────────────┐    SSH (stdio)    ┌──────────────────────────┐
-│  Claude Code     │ ───────────────> │  Ubuntu Home Server      │
-│  (Mac/PC/Web)    │ <─────────────── │  claude-home-server      │
+│  MCP Client      │ ───────────────> │  Ubuntu Home Server      │
+│  (any LLM)       │ <─────────────── │  claude-home-server      │
 └─────────────────┘    JSON-RPC       │  (MCP over stdin/stdout) │
                                       └──────────────────────────┘
 ```
@@ -46,11 +46,11 @@ Claude Code connects via SSH to your server and manages it through structured, s
 
 Homeserver-Betreiber haben komplexe Stacks (Home Assistant, Docker, Plex, Reverse Proxies, Pi-hole, ...), aber oft nicht die Expertise, sie effizient zu verwalten. Konfigurationsaenderungen erfordern stundenlanges Recherchieren von YAML-Syntax, Docker-Befehlen und Service-spezifischen APIs.
 
-**Claude kann diese Arbeit uebernehmen — braucht aber eine sichere, strukturierte Bruecke zum Server.**
+**KI-Assistenten koennen diese Arbeit uebernehmen — brauchen aber eine sichere, strukturierte Bruecke zum Server.**
 
-claude-home-server ist diese Bruecke: ein MCP-Server (Model Context Protocol), der auf dem Ubuntu-Server laeuft und Claude Code kontrollierten Zugriff auf alle Dienste gibt.
+claude-home-server ist diese Bruecke: ein MCP-Server (Model Context Protocol), der auf dem Ubuntu-Server laeuft und jedem MCP-faehigen Client kontrollierten Zugriff auf alle Dienste gibt.
 
-### Was kann Claude damit tun?
+### Was kann dein KI-Assistent damit tun?
 
 - **Server analysieren**: Hardware, Dienste, Ports, Docker-Container, Cronjobs, Netzwerk
 - **Docker verwalten**: Container starten/stoppen, Compose-Dateien bearbeiten und deployen, Images aktualisieren
@@ -58,6 +58,19 @@ claude-home-server ist diese Bruecke: ein MCP-Server (Model Context Protocol), d
 - **Dateien bearbeiten**: Konfigurationsdateien lesen, schreiben, durchsuchen, vergleichen — mit automatischen Backups
 - **Home Assistant steuern**: Entitaeten schalten, Automationen erstellen, Konfiguration bearbeiten
 - **Plex verwalten**: Bibliotheken scannen, Benutzer verwalten, Einstellungen aendern
+
+### Kompatible MCP-Clients
+
+| Client | MCP Support |
+|---|---|
+| Claude Code (CLI/Desktop/Web) | Nativ |
+| Cursor | MCP Servers |
+| VS Code + Copilot | MCP Servers |
+| Windsurf | MCP Servers |
+| OpenAI Codex CLI | MCP Support |
+| Custom Agents | Via MCP SDK (Python, TypeScript, etc.) |
+
+Der Server nutzt das offene **Model Context Protocol (MCP)** — jeder Client der MCP ueber stdio spricht, kann sich verbinden.
 
 ## Architekturentscheidungen
 
@@ -252,9 +265,9 @@ Der Setup-Wizard erkennt automatisch laufende Dienste (Docker, Home Assistant, P
 
 Unterstuetzte Modi: `--upgrade`, `--repair`, `--uninstall`
 
-### Claude Code konfigurieren
+### MCP-Client konfigurieren
 
-Fuege in deine Claude Code MCP-Konfiguration ein (`~/.claude/settings.json`):
+Beispiel fuer Claude Code (`~/.claude/settings.json`) — andere MCP-Clients nutzen ein aehnliches Format:
 
 ```json
 {
@@ -274,7 +287,7 @@ Fuege in deine Claude Code MCP-Konfiguration ein (`~/.claude/settings.json`):
 
 ### Testen
 
-Starte Claude Code und frage:
+Starte deinen MCP-Client und frage:
 
 > "Analysiere meinen Homeserver. Was laeuft dort alles?"
 
@@ -301,7 +314,7 @@ Die Datei gehoert `root:mcp-server` mit Mode `640` — der MCP-Prozess kann sein
 
 ## Nutzung
 
-### Beispiele fuer Claude Code
+### Beispiel-Prompts
 
 **Server analysieren:**
 > "Was laeuft auf meinem Server? Zeig mir alle Docker-Container und offenen Ports."
@@ -330,11 +343,11 @@ Die Datei gehoert `root:mcp-server` mit Mode `640` — der MCP-Prozess kann sein
 
 Home server owners run complex stacks (Home Assistant, Docker, Plex, reverse proxies, Pi-hole, etc.) but often lack the expertise to manage them efficiently. Configuration changes require hours of research into YAML syntax, Docker commands, and service-specific APIs.
 
-**Claude can do this work — but needs a secure, structured bridge to the server.**
+**AI assistants can do this work — but need a secure, structured bridge to the server.**
 
-claude-home-server is that bridge: an MCP server (Model Context Protocol) that runs on the Ubuntu server and gives Claude Code controlled access to all services.
+claude-home-server is that bridge: an MCP server (Model Context Protocol) that runs on the Ubuntu server and gives any MCP-capable client controlled access to all services.
 
-### What can Claude do with it?
+### What can your AI assistant do with it?
 
 - **Analyze the server**: Hardware, services, ports, Docker containers, cron jobs, network
 - **Manage Docker**: Start/stop containers, edit and deploy compose files, update images
@@ -342,6 +355,19 @@ claude-home-server is that bridge: an MCP server (Model Context Protocol) that r
 - **Edit files**: Read, write, search, and compare configuration files — with automatic backups
 - **Control Home Assistant**: Toggle entities, create automations, edit configuration
 - **Manage Plex**: Scan libraries, manage users, change settings
+
+### Compatible MCP clients
+
+| Client | MCP Support |
+|---|---|
+| Claude Code (CLI/Desktop/Web) | Native |
+| Cursor | MCP Servers |
+| VS Code + Copilot | MCP Servers |
+| Windsurf | MCP Servers |
+| OpenAI Codex CLI | MCP Support |
+| Custom Agents | Via MCP SDK (Python, TypeScript, etc.) |
+
+The server uses the open **Model Context Protocol (MCP)** — any client that speaks MCP over stdio can connect.
 
 ## Architecture decisions
 
@@ -536,9 +562,9 @@ The setup wizard auto-detects running services (Docker, Home Assistant, Plex), p
 
 Supported modes: `--upgrade`, `--repair`, `--uninstall`
 
-### Configure Claude Code
+### Configure your MCP client
 
-Add to your Claude Code MCP configuration (`~/.claude/settings.json`):
+Example for Claude Code (`~/.claude/settings.json`) — other MCP clients use a similar format:
 
 ```json
 {
@@ -558,7 +584,7 @@ Add to your Claude Code MCP configuration (`~/.claude/settings.json`):
 
 ### Test it
 
-Start Claude Code and ask:
+Start your MCP client and ask:
 
 > "Analyze my home server. What's running on it?"
 
@@ -585,7 +611,7 @@ This file is owned by `root:mcp-server` with mode `640` — the MCP process cann
 
 ## Usage
 
-### Example prompts for Claude Code
+### Example prompts
 
 **Analyze the server:**
 > "What's running on my server? Show me all Docker containers and open ports."
