@@ -143,7 +143,9 @@ class PermissionsConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def load_config(config_path: str | Path = "config/server.yaml") -> ServerConfig:
+def load_config(
+    config_path: str | Path | None = None,
+) -> ServerConfig:
     """Load and validate server configuration from a YAML file.
 
     Returns a ``ServerConfig`` populated entirely from defaults if the file
@@ -152,8 +154,8 @@ def load_config(config_path: str | Path = "config/server.yaml") -> ServerConfig:
     they can act on real services.
 
     Args:
-        config_path: Path to the YAML config file.  Relative paths are
-            resolved against the current working directory.
+        config_path: Path to the YAML config file.  Falls back to the
+            ``CONFIG_PATH`` environment variable, then ``config/server.yaml``.
 
     Returns:
         A fully validated ``ServerConfig`` instance.
@@ -163,7 +165,8 @@ def load_config(config_path: str | Path = "config/server.yaml") -> ServerConfig:
         pydantic.ValidationError: If the YAML structure does not match the
             expected schema.
     """
-    path = Path(config_path)
+    resolved = config_path or os.environ.get("CONFIG_PATH", "config/server.yaml")
+    path = Path(resolved)
     if not path.exists():
         logger.info("Config file not found at %s — using defaults", path)
         return ServerConfig()
@@ -178,14 +181,18 @@ def load_config(config_path: str | Path = "config/server.yaml") -> ServerConfig:
     return ServerConfig.model_validate(raw)
 
 
-def load_permissions(config_path: str | Path = "config/permissions.yaml") -> PermissionsConfig:
+def load_permissions(
+    config_path: str | Path | None = None,
+) -> PermissionsConfig:
     """Load permissions overrides from a YAML file.
 
     Returns an empty ``PermissionsConfig`` (no overrides) if the file does not
     exist, preserving all default risk-level assignments.
 
     Args:
-        config_path: Path to the permissions YAML file.
+        config_path: Path to the permissions YAML file.  Falls back to the
+            ``PERMISSIONS_PATH`` environment variable, then
+            ``config/permissions.yaml``.
 
     Returns:
         A validated ``PermissionsConfig`` instance.
@@ -195,7 +202,8 @@ def load_permissions(config_path: str | Path = "config/permissions.yaml") -> Per
         pydantic.ValidationError: If the YAML structure does not match the
             expected schema.
     """
-    path = Path(config_path)
+    resolved = config_path or os.environ.get("PERMISSIONS_PATH", "config/permissions.yaml")
+    path = Path(resolved)
     if not path.exists():
         logger.debug("Permissions file not found at %s — no overrides active", path)
         return PermissionsConfig()
